@@ -11,15 +11,18 @@ export async function resolveWorkflowId(octokit: Octokit, owner: string, repo: s
 }
 
 export async function fetchActiveRuns(octokit: Octokit, owner: string, repo: string, workflowId: number, branch: string) {
+  const activeStatuses = new Set(['queued', 'in_progress', 'waiting'])
   const runs = []
-  for (const status of ['queued', 'in_progress', 'waiting'] as const) {
-    for (let page = 1; ; page++) {
-      const { data } = await octokit.rest.actions.listWorkflowRuns({
-        owner, repo, workflow_id: workflowId, branch: branch || undefined, status, per_page: 100, page,
-      })
-      runs.push(...data.workflow_runs)
-      if (data.workflow_runs.length < 100) break
-    }
+  for (let page = 1; ; page++) {
+    const { data } = await octokit.rest.actions.listWorkflowRuns({
+      owner, repo, workflow_id: workflowId, branch: branch || undefined, per_page: 100, page,
+    })
+    runs.push(
+      ...data.workflow_runs.filter((run: { status?: string | null }) =>
+        run.status != null && activeStatuses.has(run.status),
+      ),
+    )
+    if (data.workflow_runs.length < 100) break
   }
   return runs
 }
