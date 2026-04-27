@@ -23699,23 +23699,21 @@ function getOctokit(token, options, ...additionalPlugins) {
 
 // src/github.ts
 async function fetchActiveRuns(octokit, owner, repo, workflowId, branch) {
-  const activeStatuses = /* @__PURE__ */ new Set(["queued", "in_progress", "waiting"]);
   const runs = [];
-  for (let page = 1; ; page++) {
-    const { data } = await octokit.rest.actions.listWorkflowRuns({
-      owner,
-      repo,
-      workflow_id: workflowId,
-      branch: branch || void 0,
-      per_page: 100,
-      page
-    });
-    runs.push(
-      ...data.workflow_runs.filter(
-        (run2) => run2.status != null && activeStatuses.has(run2.status)
-      )
-    );
-    if (data.workflow_runs.length < 100) break;
+  for (const status of ["queued", "in_progress", "waiting"]) {
+    for (let page = 1; ; page++) {
+      const { data } = await octokit.rest.actions.listWorkflowRuns({
+        owner,
+        repo,
+        workflow_id: workflowId,
+        branch: branch || void 0,
+        status,
+        per_page: 100,
+        page
+      });
+      runs.push(...data.workflow_runs);
+      if (data.workflow_runs.length < 100) break;
+    }
   }
   return runs;
 }

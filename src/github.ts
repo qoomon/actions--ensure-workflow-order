@@ -3,18 +3,15 @@ import * as github from '@actions/github'
 export type Octokit = ReturnType<typeof github.getOctokit>
 
 export async function fetchActiveRuns(octokit: Octokit, owner: string, repo: string, workflowId: number, branch: string) {
-  const activeStatuses = new Set(['queued', 'in_progress', 'waiting'])
   const runs = []
-  for (let page = 1; ; page++) {
-    const { data } = await octokit.rest.actions.listWorkflowRuns({
-      owner, repo, workflow_id: workflowId, branch: branch || undefined, per_page: 100, page,
-    })
-    runs.push(
-      ...data.workflow_runs.filter((run: { status?: string | null }) =>
-        run.status != null && activeStatuses.has(run.status),
-      ),
-    )
-    if (data.workflow_runs.length < 100) break
+  for (const status of ['queued', 'in_progress', 'waiting'] as const) {
+    for (let page = 1; ; page++) {
+      const { data } = await octokit.rest.actions.listWorkflowRuns({
+        owner, repo, workflow_id: workflowId, branch: branch || undefined, status, per_page: 100, page,
+      })
+      runs.push(...data.workflow_runs)
+      if (data.workflow_runs.length < 100) break
+    }
   }
   return runs
 }
