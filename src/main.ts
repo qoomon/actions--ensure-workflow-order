@@ -37,6 +37,13 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** Return the start time of a workflow run in milliseconds. */
+function getRunStartTime(run: { run_started_at?: string | null; created_at: string }): number {
+  return run.run_started_at
+    ? new Date(run.run_started_at).getTime()
+    : new Date(run.created_at).getTime()
+}
+
 // ---------------------------------------------------------------------------
 // GitHub API helpers
 // ---------------------------------------------------------------------------
@@ -62,7 +69,7 @@ async function fetchActiveRuns(
   repo: string,
   workflowId: number,
   branch: string,
-): Promise<{ id: number; run_number: number; status: string; conclusion: WorkflowRunConclusion }[]> {
+): Promise<{ id: number; run_number: number; status: string; conclusion: WorkflowRunConclusion; run_started_at: string | null; created_at: string }[]> {
   const activeStatuses: WorkflowRunStatus[] = ['queued', 'in_progress', 'waiting']
 
   const results: Awaited<ReturnType<typeof fetchActiveRuns>> = []
@@ -84,6 +91,8 @@ async function fetchActiveRuns(
         run_number: number
         status: string
         conclusion: WorkflowRunConclusion
+        run_started_at: string | null
+        created_at: string
       }>
       results.push(...runs)
       if (runs.length < 100) break
@@ -157,7 +166,25 @@ async function run(): Promise<void> {
     run_id: currentRunId,
   })
 
-  const branch = branchInput || currentRun.head_branch || ''
+  // --- Resolve branch -------------------------------------------------------
+  let branch: string
+  if (branchInput) {
+    branch = branchInput
+  } else if (currentRun.head_branch) {
+    branch = currentRun.head_branch
+  } else {
+    const ref = github.context.ref
+    if (ref.startsWith('refs/heads/')) {
+      branch = ref.slice('refs/heads/'.length)
+    } else {
+      core.setFailed(
+        `Could not determine the branch for this run (ref: '${ref}'). ` +
+          `Please provide the 'run-on-branch' input explicitly.`,
+      )
+      return
+    }
+  }
+
   const currentWorkflowId = currentRun.workflow_id
 
   // --- Resolve target workflow ID ------------------------------------------
@@ -168,9 +195,14 @@ async function run(): Promise<void> {
     targetWorkflowId = currentWorkflowId
   }
 
+  // When the target workflow differs from the current one, run_number is not
+  // comparable across workflows. Use run_started_at instead.
+  const isSameWorkflow = targetWorkflowId === currentWorkflowId
+  const currentRunStartedAt = getRunStartTime(currentRun)
+
   core.info(`Repository  : ${owner}/${repo}`)
-  core.info(`Branch      : ${branch || '(any)'}`)
-  core.info(`Workflow ID : ${targetWorkflowId}`)
+  core.info(`Branch      : ${branch}`)
+  core.info(`Workflow ID : ${targetWorkflowId}${isSameWorkflow ? ' (current)' : ' (cross-workflow)'}`)
   core.info(`Job filter  : ${jobInput || '(entire run)'}`)
   core.info(`Current run : #${currentRunNumber} (ID: ${currentRunId})`)
   core.info(`Poll interval  : ${pollIntervalSec}s`)
@@ -190,8 +222,16 @@ async function run(): Promise<void> {
 
     const activeRuns = await fetchActiveRuns(octokit, owner, repo, targetWorkflowId, branch)
 
-    // Only care about runs that were triggered *before* the current run
-    const precedingActiveRuns = activeRuns.filter((r) => r.run_number < currentRunNumber)
+    // Only care about runs that were triggered *before* the current run.
+    // Within the same workflow run_number is a reliable monotonic counter.
+    // Across workflows, compare by run_started_at timestamp instead.
+    const precedingActiveRuns = activeRuns.filter((r) => {
+      if (isSameWorkflow) {
+        return r.run_number < currentRunNumber
+      }
+      const runStartedAt = getRunStartTime(r)
+      return runStartedAt < currentRunStartedAt
+    })
 
     if (precedingActiveRuns.length === 0) {
       core.info('No preceding active runs found – proceeding.')

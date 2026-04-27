@@ -23701,6 +23701,9 @@ function getOctokit(token, options, ...additionalPlugins) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+function getRunStartTime(run2) {
+  return run2.run_started_at ? new Date(run2.run_started_at).getTime() : new Date(run2.created_at).getTime();
+}
 async function resolveWorkflowId(octokit, owner, repo, workflowRef) {
   const numeric = parseInt(workflowRef, 10);
   if (!isNaN(numeric)) return numeric;
@@ -23774,7 +23777,22 @@ async function run() {
     repo,
     run_id: currentRunId
   });
-  const branch = branchInput || currentRun.head_branch || "";
+  let branch;
+  if (branchInput) {
+    branch = branchInput;
+  } else if (currentRun.head_branch) {
+    branch = currentRun.head_branch;
+  } else {
+    const ref = context2.ref;
+    if (ref.startsWith("refs/heads/")) {
+      branch = ref.slice("refs/heads/".length);
+    } else {
+      setFailed(
+        `Could not determine the branch for this run (ref: '${ref}'). Please provide the 'run-on-branch' input explicitly.`
+      );
+      return;
+    }
+  }
   const currentWorkflowId = currentRun.workflow_id;
   let targetWorkflowId;
   if (workflowInput) {
@@ -23782,9 +23800,11 @@ async function run() {
   } else {
     targetWorkflowId = currentWorkflowId;
   }
+  const isSameWorkflow = targetWorkflowId === currentWorkflowId;
+  const currentRunStartedAt = getRunStartTime(currentRun);
   info(`Repository  : ${owner}/${repo}`);
-  info(`Branch      : ${branch || "(any)"}`);
-  info(`Workflow ID : ${targetWorkflowId}`);
+  info(`Branch      : ${branch}`);
+  info(`Workflow ID : ${targetWorkflowId}${isSameWorkflow ? " (current)" : " (cross-workflow)"}`);
   info(`Job filter  : ${jobInput || "(entire run)"}`);
   info(`Current run : #${currentRunNumber} (ID: ${currentRunId})`);
   info(`Poll interval  : ${pollIntervalSec}s`);
@@ -23799,7 +23819,13 @@ async function run() {
       return;
     }
     const activeRuns = await fetchActiveRuns(octokit, owner, repo, targetWorkflowId, branch);
-    const precedingActiveRuns = activeRuns.filter((r) => r.run_number < currentRunNumber);
+    const precedingActiveRuns = activeRuns.filter((r) => {
+      if (isSameWorkflow) {
+        return r.run_number < currentRunNumber;
+      }
+      const runStartedAt = getRunStartTime(r);
+      return runStartedAt < currentRunStartedAt;
+    });
     if (precedingActiveRuns.length === 0) {
       info("No preceding active runs found \u2013 proceeding.");
       break;
