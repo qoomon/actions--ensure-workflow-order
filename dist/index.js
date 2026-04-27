@@ -23714,7 +23714,7 @@ async function resolveWorkflowId(octokit, owner, repo, workflowRef) {
   return data.id;
 }
 async function fetchActiveRuns(octokit, owner, repo, workflowId, branch) {
-  const activeStatuses = ["queued", "in_progress", "waiting", "requested", "pending"];
+  const activeStatuses = ["queued", "in_progress", "waiting"];
   const results = [];
   for (const status of activeStatuses) {
     let page = 1;
@@ -23762,6 +23762,14 @@ async function run() {
   const pollIntervalSec = parseInt(getInput("poll-interval") || "10", 10);
   const timeoutSec = parseInt(getInput("timeout") || "600", 10);
   const failOnPrecedingFailure = getInput("fail-on-preceding-run-failure").trim().toLowerCase() === "true";
+  if (isNaN(pollIntervalSec) || pollIntervalSec <= 0) {
+    setFailed(`Invalid poll-interval: '${getInput("poll-interval")}'. Must be a positive integer.`);
+    return;
+  }
+  if (isNaN(timeoutSec) || timeoutSec <= 0) {
+    setFailed(`Invalid timeout: '${getInput("timeout")}'. Must be a positive integer.`);
+    return;
+  }
   const pollInterval = pollIntervalSec * 1e3;
   const timeoutMs = timeoutSec * 1e3;
   const octokit = getOctokit(token);

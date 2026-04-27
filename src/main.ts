@@ -7,7 +7,7 @@ import * as github from '@actions/github'
 
 type Octokit = ReturnType<typeof github.getOctokit>
 
-type WorkflowRunStatus = 'queued' | 'in_progress' | 'waiting' | 'requested' | 'pending'
+type WorkflowRunStatus = 'queued' | 'in_progress' | 'waiting'
 
 type WorkflowRunConclusion =
   | 'success'
@@ -68,7 +68,7 @@ async function fetchActiveRuns(
   workflowId: number,
   branch: string,
 ): Promise<{ id: number; run_number: number; status: string; conclusion: WorkflowRunConclusion }[]> {
-  const activeStatuses: WorkflowRunStatus[] = ['queued', 'in_progress', 'waiting', 'requested', 'pending']
+  const activeStatuses: WorkflowRunStatus[] = ['queued', 'in_progress', 'waiting']
 
   const results: Awaited<ReturnType<typeof fetchActiveRuns>> = []
 
@@ -138,6 +138,15 @@ async function run(): Promise<void> {
   const pollIntervalSec = parseInt(core.getInput('poll-interval') || '10', 10)
   const timeoutSec = parseInt(core.getInput('timeout') || '600', 10)
   const failOnPrecedingFailure = core.getInput('fail-on-preceding-run-failure').trim().toLowerCase() === 'true'
+
+  if (isNaN(pollIntervalSec) || pollIntervalSec <= 0) {
+    core.setFailed(`Invalid poll-interval: '${core.getInput('poll-interval')}'. Must be a positive integer.`)
+    return
+  }
+  if (isNaN(timeoutSec) || timeoutSec <= 0) {
+    core.setFailed(`Invalid timeout: '${core.getInput('timeout')}'. Must be a positive integer.`)
+    return
+  }
 
   const pollInterval = pollIntervalSec * 1000
   const timeoutMs = timeoutSec * 1000
