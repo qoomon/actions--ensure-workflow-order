@@ -30,10 +30,6 @@ inputs:
     description: 'Maximum time (in seconds) to wait for preceding runs to finish before failing. Default: 600'
     required: false
     default: '600'
-  fail-on-preceding-run-failure:
-    description: 'If true, fail this action when a preceding run (or job) has failed/cancelled instead of continuing. Default: false'
-    required: false
-    default: 'false'
   token:
     description: 'GitHub token used to query the API. Defaults to the token provided by the GitHub Actions runner.'
     required: false

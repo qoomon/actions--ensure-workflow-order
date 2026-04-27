@@ -37,11 +37,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/** Return true when the conclusion indicates a non-successful terminal state. */
-function isFailedConclusion(conclusion: WorkflowRunConclusion | JobConclusion): boolean {
-  return conclusion !== null && conclusion !== 'success' && conclusion !== 'neutral' && conclusion !== 'skipped'
-}
-
 // ---------------------------------------------------------------------------
 // GitHub API helpers
 // ---------------------------------------------------------------------------
@@ -137,7 +132,6 @@ async function run(): Promise<void> {
   const branchInput = core.getInput('run-on-branch').trim()
   const pollIntervalSec = parseInt(core.getInput('poll-interval') || '10', 10)
   const timeoutSec = parseInt(core.getInput('timeout') || '600', 10)
-  const failOnPrecedingFailure = core.getInput('fail-on-preceding-run-failure').trim().toLowerCase() === 'true'
 
   if (isNaN(pollIntervalSec) || pollIntervalSec <= 0) {
     core.setFailed(`Invalid poll-interval: '${core.getInput('poll-interval')}'. Must be a positive integer.`)
@@ -181,7 +175,6 @@ async function run(): Promise<void> {
   core.info(`Current run : #${currentRunNumber} (ID: ${currentRunId})`)
   core.info(`Poll interval  : ${pollIntervalSec}s`)
   core.info(`Timeout        : ${timeoutSec}s`)
-  core.info(`Fail on preceding failure: ${failOnPrecedingFailure}`)
   core.info('─'.repeat(60))
 
   // --- Polling loop ---------------------------------------------------------
@@ -235,13 +228,6 @@ async function run(): Promise<void> {
         }
 
         // Job finished
-        if (failOnPrecedingFailure && isFailedConclusion(job.conclusion)) {
-          core.setFailed(
-            `Preceding run #${precedingRun.run_number} job '${jobInput}' finished with conclusion '${job.conclusion}'.`,
-          )
-          return
-        }
-
         core.info(
           `Run #${precedingRun.run_number}: job '${jobInput}' finished with conclusion '${job.conclusion}'.`,
         )
@@ -256,37 +242,6 @@ async function run(): Promise<void> {
     }
 
     await sleep(pollInterval)
-  }
-
-  // --- Final check: inspect concluded preceding runs if fail-on-failure is on
-  if (failOnPrecedingFailure && !jobInput) {
-    // Fetch recently completed runs (look back up to 200 runs to find preceding ones)
-    const { data: recentData } = await octokit.rest.actions.listWorkflowRuns({
-      owner,
-      repo,
-      workflow_id: targetWorkflowId,
-      branch: branch || undefined,
-      per_page: 100,
-    })
-
-    const recentRuns = recentData.workflow_runs as Array<{
-      run_number: number
-      status: string
-      conclusion: WorkflowRunConclusion
-    }>
-
-    const failedPreceding = recentRuns.filter(
-      (r) => r.run_number < currentRunNumber && r.status === 'completed' && isFailedConclusion(r.conclusion),
-    )
-
-    if (failedPreceding.length > 0) {
-      const summary = failedPreceding
-        .map((r) => `#${r.run_number} (${r.conclusion})`)
-        .join(', ')
-      core.warning(`Preceding run(s) finished with failure: ${summary}`)
-      // Note: we only warn here because the runs already completed; the option
-      // `fail-on-preceding-run-failure` is primarily meaningful for blocking logic.
-    }
   }
 
   core.info('✓ Workflow order ensured – proceeding with current run.')

@@ -19948,9 +19948,6 @@ function setFailed(message) {
 function error(message, properties = {}) {
   issueCommand("error", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
 }
-function warning(message, properties = {}) {
-  issueCommand("warning", toCommandProperties(properties), message instanceof Error ? message.toString() : message);
-}
 function info(message) {
   process.stdout.write(message + os3.EOL);
 }
@@ -23704,9 +23701,6 @@ function getOctokit(token, options, ...additionalPlugins) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-function isFailedConclusion(conclusion) {
-  return conclusion !== null && conclusion !== "success" && conclusion !== "neutral" && conclusion !== "skipped";
-}
 async function resolveWorkflowId(octokit, owner, repo, workflowRef) {
   const numeric = parseInt(workflowRef, 10);
   if (!isNaN(numeric)) return numeric;
@@ -23761,7 +23755,6 @@ async function run() {
   const branchInput = getInput("run-on-branch").trim();
   const pollIntervalSec = parseInt(getInput("poll-interval") || "10", 10);
   const timeoutSec = parseInt(getInput("timeout") || "600", 10);
-  const failOnPrecedingFailure = getInput("fail-on-preceding-run-failure").trim().toLowerCase() === "true";
   if (isNaN(pollIntervalSec) || pollIntervalSec <= 0) {
     setFailed(`Invalid poll-interval: '${getInput("poll-interval")}'. Must be a positive integer.`);
     return;
@@ -23796,7 +23789,6 @@ async function run() {
   info(`Current run : #${currentRunNumber} (ID: ${currentRunId})`);
   info(`Poll interval  : ${pollIntervalSec}s`);
   info(`Timeout        : ${timeoutSec}s`);
-  info(`Fail on preceding failure: ${failOnPrecedingFailure}`);
   info("\u2500".repeat(60));
   const deadline = Date.now() + timeoutMs;
   while (true) {
@@ -23831,12 +23823,6 @@ async function run() {
           stillWaiting.push(precedingRun.run_number);
           continue;
         }
-        if (failOnPrecedingFailure && isFailedConclusion(job.conclusion)) {
-          setFailed(
-            `Preceding run #${precedingRun.run_number} job '${jobInput}' finished with conclusion '${job.conclusion}'.`
-          );
-          return;
-        }
         info(
           `Run #${precedingRun.run_number}: job '${jobInput}' finished with conclusion '${job.conclusion}'.`
         );
@@ -23848,23 +23834,6 @@ async function run() {
       info(`Still waiting for run(s): ${stillWaiting.map((n) => `#${n}`).join(", ")}`);
     }
     await sleep(pollInterval);
-  }
-  if (failOnPrecedingFailure && !jobInput) {
-    const { data: recentData } = await octokit.rest.actions.listWorkflowRuns({
-      owner,
-      repo,
-      workflow_id: targetWorkflowId,
-      branch: branch || void 0,
-      per_page: 100
-    });
-    const recentRuns = recentData.workflow_runs;
-    const failedPreceding = recentRuns.filter(
-      (r) => r.run_number < currentRunNumber && r.status === "completed" && isFailedConclusion(r.conclusion)
-    );
-    if (failedPreceding.length > 0) {
-      const summary2 = failedPreceding.map((r) => `#${r.run_number} (${r.conclusion})`).join(", ");
-      warning(`Preceding run(s) finished with failure: ${summary2}`);
-    }
   }
   info("\u2713 Workflow order ensured \u2013 proceeding with current run.");
 }

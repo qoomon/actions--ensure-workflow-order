@@ -31,7 +31,6 @@ jobs:
           run-on-branch: ''       # branch filter (default: current branch)
           poll-interval: '10'     # seconds between polls
           timeout: '600'          # max seconds to wait before failing
-          fail-on-preceding-run-failure: 'false'
           token: ${{ github.token }}
 ```
 
@@ -62,7 +61,6 @@ jobs:
 | `run-on-branch` | No | current branch | Only consider runs on this branch. |
 | `poll-interval` | No | `10` | Seconds between GitHub API polls. |
 | `timeout` | No | `600` | Maximum seconds to wait before the action fails with a timeout error. |
-| `fail-on-preceding-run-failure` | No | `false` | When `true`, fail immediately if a preceding run or job has a non-successful conclusion. |
 | `token` | No | `${{ github.token }}` | GitHub token used to call the API. Needs `actions: read` permission. |
 
 ---
