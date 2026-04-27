@@ -1,0 +1,20 @@
+{
+  "name": "actions--ensure-workflow-order",
+  "version": "1.0.0",
+  "description": "GitHub Action to ensure workflow execution order",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.4.5"
+  },
+  "license": "MIT"
+}
