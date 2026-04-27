@@ -23697,8 +23697,7 @@ function getOctokit(token, options, ...additionalPlugins) {
   return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 
-// src/main.ts
-var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// src/github.ts
 var runStartTime = (run2) => new Date(run2.run_started_at ?? run2.created_at).getTime();
 async function resolveWorkflowId(octokit, owner, repo, ref) {
   if (/^\d+$/.test(ref)) return Number(ref);
@@ -23737,6 +23736,9 @@ async function findJob(octokit, owner, repo, runId, jobName) {
     if (data.jobs.length < 100) return null;
   }
 }
+
+// src/main.ts
+var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function run() {
   const token = getInput("token", { required: true });
   const workflowInput = getInput("workflow").trim();
