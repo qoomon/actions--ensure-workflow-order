@@ -23698,24 +23698,16 @@ function getOctokit(token, options, ...additionalPlugins) {
 }
 
 // src/main.ts
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-function getRunStartTime(run2) {
-  return run2.run_started_at ? new Date(run2.run_started_at).getTime() : new Date(run2.created_at).getTime();
-}
-async function resolveWorkflowId(octokit, owner, repo, workflowRef) {
-  const numeric = parseInt(workflowRef, 10);
-  if (!isNaN(numeric)) return numeric;
-  const { data } = await octokit.rest.actions.getWorkflow({ owner, repo, workflow_id: workflowRef });
-  return data.id;
+var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+var runStartTime = (run2) => new Date(run2.run_started_at ?? run2.created_at).getTime();
+async function resolveWorkflowId(octokit, owner, repo, ref) {
+  if (/^\d+$/.test(ref)) return Number(ref);
+  return (await octokit.rest.actions.getWorkflow({ owner, repo, workflow_id: ref })).data.id;
 }
 async function fetchActiveRuns(octokit, owner, repo, workflowId, branch) {
-  const activeStatuses = ["queued", "in_progress", "waiting"];
-  const results = [];
-  for (const status of activeStatuses) {
-    let page = 1;
-    while (true) {
+  const runs = [];
+  for (const status of ["queued", "in_progress", "waiting"]) {
+    for (let page = 1; ; page++) {
       const { data } = await octokit.rest.actions.listWorkflowRuns({
         owner,
         repo,
@@ -23725,17 +23717,14 @@ async function fetchActiveRuns(octokit, owner, repo, workflowId, branch) {
         per_page: 100,
         page
       });
-      const runs = data.workflow_runs;
-      results.push(...runs);
-      if (runs.length < 100) break;
-      page++;
+      runs.push(...data.workflow_runs);
+      if (data.workflow_runs.length < 100) break;
     }
   }
-  return results;
+  return runs;
 }
-async function fetchJob(octokit, owner, repo, runId, jobName) {
-  let page = 1;
-  while (true) {
+async function findJob(octokit, owner, repo, runId, jobName) {
+  for (let page = 1; ; page++) {
     const { data } = await octokit.rest.actions.listJobsForWorkflowRun({
       owner,
       repo,
@@ -23743,13 +23732,10 @@ async function fetchJob(octokit, owner, repo, runId, jobName) {
       per_page: 100,
       page
     });
-    const jobs = data.jobs;
-    const match = jobs.find((j) => j.name === jobName);
-    if (match) return match;
-    if (jobs.length < 100) break;
-    page++;
+    const job = data.jobs.find((j) => j.name === jobName);
+    if (job) return job;
+    if (data.jobs.length < 100) return null;
   }
-  return null;
 }
 async function run() {
   const token = getInput("token", { required: true });
@@ -23758,114 +23744,66 @@ async function run() {
   const branchInput = getInput("run-on-branch").trim();
   const pollIntervalSec = parseInt(getInput("poll-interval") || "10", 10);
   const timeoutSec = parseInt(getInput("timeout") || "600", 10);
-  if (isNaN(pollIntervalSec) || pollIntervalSec <= 0) {
-    setFailed(`Invalid poll-interval: '${getInput("poll-interval")}'. Must be a positive integer.`);
-    return;
-  }
-  if (isNaN(timeoutSec) || timeoutSec <= 0) {
-    setFailed(`Invalid timeout: '${getInput("timeout")}'. Must be a positive integer.`);
-    return;
-  }
-  const pollInterval = pollIntervalSec * 1e3;
-  const timeoutMs = timeoutSec * 1e3;
+  if (isNaN(pollIntervalSec) || pollIntervalSec <= 0)
+    return setFailed(`Invalid poll-interval: must be a positive integer.`);
+  if (isNaN(timeoutSec) || timeoutSec <= 0)
+    return setFailed(`Invalid timeout: must be a positive integer.`);
   const octokit = getOctokit(token);
   const { owner, repo } = context2.repo;
-  const currentRunId = context2.runId;
-  const currentRunNumber = context2.runNumber;
   const { data: currentRun } = await octokit.rest.actions.getWorkflowRun({
     owner,
     repo,
-    run_id: currentRunId
+    run_id: context2.runId
   });
-  let branch;
-  if (branchInput) {
-    branch = branchInput;
-  } else if (currentRun.head_branch) {
-    branch = currentRun.head_branch;
-  } else {
-    const ref = context2.ref;
-    if (ref.startsWith("refs/heads/")) {
-      branch = ref.slice("refs/heads/".length);
-    } else {
-      setFailed(
-        `Could not determine the branch for this run (ref: '${ref}'). Please provide the 'run-on-branch' input explicitly.`
-      );
-      return;
-    }
-  }
-  const currentWorkflowId = currentRun.workflow_id;
-  let targetWorkflowId;
-  if (workflowInput) {
-    targetWorkflowId = await resolveWorkflowId(octokit, owner, repo, workflowInput);
-  } else {
-    targetWorkflowId = currentWorkflowId;
-  }
-  const isSameWorkflow = targetWorkflowId === currentWorkflowId;
-  const currentRunStartedAt = getRunStartTime(currentRun);
-  info(`Repository  : ${owner}/${repo}`);
-  info(`Branch      : ${branch}`);
-  info(`Workflow ID : ${targetWorkflowId}${isSameWorkflow ? " (current)" : " (cross-workflow)"}`);
-  info(`Job filter  : ${jobInput || "(entire run)"}`);
-  info(`Current run : #${currentRunNumber} (ID: ${currentRunId})`);
-  info(`Poll interval  : ${pollIntervalSec}s`);
-  info(`Timeout        : ${timeoutSec}s`);
-  info("\u2500".repeat(60));
-  const deadline = Date.now() + timeoutMs;
+  const ref = context2.ref;
+  const branch = branchInput || currentRun.head_branch || (ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : "");
+  if (!branch)
+    return setFailed(`Could not determine branch (ref: '${ref}'). Please set the 'run-on-branch' input.`);
+  const targetWorkflowId = workflowInput ? await resolveWorkflowId(octokit, owner, repo, workflowInput) : currentRun.workflow_id;
+  const isSameWorkflow = targetWorkflowId === currentRun.workflow_id;
+  const currentRunStartedAt = runStartTime(currentRun);
+  info(`Repository    : ${owner}/${repo}`);
+  info(`Branch        : ${branch}`);
+  info(`Workflow      : ${targetWorkflowId}${isSameWorkflow ? "" : " (cross-workflow)"}`);
+  info(`Job filter    : ${jobInput || "(entire run)"}`);
+  info(`Current run   : #${context2.runNumber} (ID: ${context2.runId})`);
+  info(`Poll interval : ${pollIntervalSec}s | Timeout: ${timeoutSec}s`);
+  const deadline = Date.now() + timeoutSec * 1e3;
   while (true) {
-    if (Date.now() > deadline) {
-      setFailed(
-        `Timeout: preceding workflow run(s) did not complete within ${timeoutSec} second(s).`
-      );
-      return;
-    }
+    if (Date.now() > deadline)
+      return setFailed(`Timeout: preceding run(s) did not complete within ${timeoutSec}s.`);
     const activeRuns = await fetchActiveRuns(octokit, owner, repo, targetWorkflowId, branch);
-    const precedingActiveRuns = activeRuns.filter((r) => {
-      if (isSameWorkflow) {
-        return r.run_number < currentRunNumber;
-      }
-      const runStartedAt = getRunStartTime(r);
-      return runStartedAt < currentRunStartedAt;
-    });
-    if (precedingActiveRuns.length === 0) {
-      info("No preceding active runs found \u2013 proceeding.");
+    const precedingRuns = activeRuns.filter(
+      (r) => isSameWorkflow ? r.run_number < context2.runNumber : runStartTime(r) < currentRunStartedAt
+    );
+    if (precedingRuns.length === 0) {
+      info("No preceding active runs \u2013 proceeding.");
       break;
     }
     if (!jobInput) {
-      info(
-        `Waiting for ${precedingActiveRuns.length} preceding run(s): ` + precedingActiveRuns.map((r) => `#${r.run_number}`).join(", ")
-      );
+      info(`Waiting for preceding run(s): ${precedingRuns.map((r) => `#${r.run_number}`).join(", ")}`);
     } else {
       const stillWaiting = [];
-      for (const precedingRun of precedingActiveRuns) {
-        const job = await fetchJob(octokit, owner, repo, precedingRun.id, jobInput);
-        if (!job) {
-          info(`Run #${precedingRun.run_number}: job '${jobInput}' not yet found \u2013 waiting.`);
-          stillWaiting.push(precedingRun.run_number);
-          continue;
+      for (const run2 of precedingRuns) {
+        const job = await findJob(octokit, owner, repo, run2.id, jobInput);
+        if (!job || job.status !== "completed") {
+          info(`Run #${run2.run_number}: job '${jobInput}' ${job ? `is '${job.status}'` : "not yet found"} \u2013 waiting.`);
+          stillWaiting.push(run2.run_number);
+        } else {
+          info(`Run #${run2.run_number}: job '${jobInput}' completed (${job.conclusion}).`);
         }
-        const jobFinished = job.status === "completed";
-        if (!jobFinished) {
-          info(`Run #${precedingRun.run_number}: job '${jobInput}' is '${job.status}' \u2013 waiting.`);
-          stillWaiting.push(precedingRun.run_number);
-          continue;
-        }
-        info(
-          `Run #${precedingRun.run_number}: job '${jobInput}' finished with conclusion '${job.conclusion}'.`
-        );
       }
       if (stillWaiting.length === 0) {
-        info(`All preceding runs' job '${jobInput}' have completed \u2013 proceeding.`);
+        info(`All preceding runs' job '${jobInput}' completed \u2013 proceeding.`);
         break;
       }
-      info(`Still waiting for run(s): ${stillWaiting.map((n) => `#${n}`).join(", ")}`);
+      info(`Still waiting for: ${stillWaiting.map((n) => `#${n}`).join(", ")}`);
     }
-    await sleep(pollInterval);
+    await sleep(pollIntervalSec * 1e3);
   }
-  info("\u2713 Workflow order ensured \u2013 proceeding with current run.");
+  info("\u2713 Workflow order ensured.");
 }
-run().catch((err) => {
-  setFailed(err instanceof Error ? err.message : String(err));
-});
+run().catch((err) => setFailed(err instanceof Error ? err.message : String(err)));
 /*! Bundled license information:
 
 undici/lib/web/fetch/body.js:
