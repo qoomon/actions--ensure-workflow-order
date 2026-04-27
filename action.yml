@@ -2,12 +2,6 @@ name: 'Ensure Workflow Order'
 description: 'Ensures workflow execution order by waiting for preceding runs (or a specific job within them) to complete before proceeding.'
 
 inputs:
-  workflow:
-    description: >
-      Workflow file name (e.g. ci.yml) or workflow ID of the workflow to wait for.
-      Defaults to the current workflow.
-    required: false
-    default: ''
   job:
     description: >
       Name of the job within the target workflow to wait for.

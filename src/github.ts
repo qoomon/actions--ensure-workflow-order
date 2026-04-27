@@ -2,14 +2,6 @@ import * as github from '@actions/github'
 
 export type Octokit = ReturnType<typeof github.getOctokit>
 
-export const runStartTime = (run: { run_started_at?: string | null; created_at: string }) =>
-  new Date(run.run_started_at ?? run.created_at).getTime()
-
-export async function resolveWorkflowId(octokit: Octokit, owner: string, repo: string, ref: string) {
-  if (/^\d+$/.test(ref)) return Number(ref)
-  return (await octokit.rest.actions.getWorkflow({ owner, repo, workflow_id: ref })).data.id
-}
-
 export async function fetchActiveRuns(octokit: Octokit, owner: string, repo: string, workflowId: number, branch: string) {
   const activeStatuses = new Set(['queued', 'in_progress', 'waiting'])
   const runs = []

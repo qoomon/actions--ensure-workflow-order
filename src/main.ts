@@ -1,12 +1,11 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
-import { fetchActiveRuns, findJob, resolveWorkflowId, runStartTime } from './github'
+import { fetchActiveRuns, findJob } from './github'
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 async function run() {
   const token = core.getInput('token', { required: true })
-  const workflowInput = core.getInput('workflow').trim()
   const jobInput = core.getInput('job').trim()
   const branchInput = core.getInput('run-on-branch').trim()
   const pollIntervalSec = parseInt(core.getInput('poll-interval') || '10', 10)
@@ -29,15 +28,9 @@ async function run() {
   if (!branch)
     return core.setFailed(`Could not determine branch (ref: '${ref}'). Please set the 'run-on-branch' input.`)
 
-  const targetWorkflowId = workflowInput
-    ? await resolveWorkflowId(octokit, owner, repo, workflowInput)
-    : currentRun.workflow_id
-  const isSameWorkflow = targetWorkflowId === currentRun.workflow_id
-  const currentRunStartedAt = runStartTime(currentRun)
-
   core.info(`Repository    : ${owner}/${repo}`)
   core.info(`Branch        : ${branch}`)
-  core.info(`Workflow      : ${targetWorkflowId}${isSameWorkflow ? '' : ' (cross-workflow)'}`)
+  core.info(`Workflow      : ${currentRun.workflow_id}`)
   core.info(`Job filter    : ${jobInput || '(entire run)'}`)
   core.info(`Current run   : #${github.context.runNumber} (ID: ${github.context.runId})`)
   core.info(`Poll interval : ${pollIntervalSec}s | Timeout: ${timeoutSec}s`)
@@ -48,10 +41,8 @@ async function run() {
     if (Date.now() > deadline)
       return core.setFailed(`Timeout: preceding run(s) did not complete within ${timeoutSec}s.`)
 
-    const activeRuns = await fetchActiveRuns(octokit, owner, repo, targetWorkflowId, branch)
-    const precedingRuns = activeRuns.filter((r) =>
-      isSameWorkflow ? r.run_number < github.context.runNumber : runStartTime(r) < currentRunStartedAt,
-    )
+    const activeRuns = await fetchActiveRuns(octokit, owner, repo, currentRun.workflow_id, branch)
+    const precedingRuns = activeRuns.filter((r) => r.run_number < github.context.runNumber)
 
     if (precedingRuns.length === 0) {
       core.info('No preceding active runs – proceeding.')

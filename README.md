@@ -9,7 +9,7 @@ This is useful when you need to guarantee FIFO ordering of deployments or other 
 ## How it works
 
 1. The action determines the **run number** of the current workflow run.
-2. It queries the GitHub API for all **active** (queued / in-progress / waiting) runs of the target workflow with a *lower* run number.
+2. It queries the GitHub API for all **active** (queued / in-progress / waiting) runs of the **current workflow** with a lower run number on the same branch.
 3. It **polls** until all preceding runs (or the specified job within them) have finished.
 4. If the configurable **timeout** is exceeded the action fails.
 
@@ -26,7 +26,6 @@ jobs:
         uses: qoomon/actions--ensure-workflow-order@v1
         with:
           # All inputs are optional – defaults shown below
-          workflow: ''            # workflow file or ID (default: current workflow)
           job: ''                 # job name to wait for (default: entire run)
           run-on-branch: ''       # branch filter (default: current branch)
           poll-interval: '10'     # seconds between polls
@@ -42,21 +41,12 @@ jobs:
     job: deploy   # wait until 'deploy' job is done in all preceding runs
 ```
 
-### Wait for a different workflow
-
-```yaml
-- uses: qoomon/actions--ensure-workflow-order@v1
-  with:
-    workflow: ci.yml
-```
-
 ---
 
 ## Inputs
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `workflow` | No | current workflow | Workflow file name (e.g. `ci.yml`) or numeric workflow ID to wait for. |
 | `job` | No | *(entire run)* | Name of the job to wait for inside each preceding run. When omitted the action waits for the entire run to complete. |
 | `run-on-branch` | No | current branch | Only consider runs on this branch. |
 | `poll-interval` | No | `10` | Seconds between GitHub API polls. |

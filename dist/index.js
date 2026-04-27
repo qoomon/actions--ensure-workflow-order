@@ -23698,27 +23698,24 @@ function getOctokit(token, options, ...additionalPlugins) {
 }
 
 // src/github.ts
-var runStartTime = (run2) => new Date(run2.run_started_at ?? run2.created_at).getTime();
-async function resolveWorkflowId(octokit, owner, repo, ref) {
-  if (/^\d+$/.test(ref)) return Number(ref);
-  return (await octokit.rest.actions.getWorkflow({ owner, repo, workflow_id: ref })).data.id;
-}
 async function fetchActiveRuns(octokit, owner, repo, workflowId, branch) {
+  const activeStatuses = /* @__PURE__ */ new Set(["queued", "in_progress", "waiting"]);
   const runs = [];
-  for (const status of ["queued", "in_progress", "waiting"]) {
-    for (let page = 1; ; page++) {
-      const { data } = await octokit.rest.actions.listWorkflowRuns({
-        owner,
-        repo,
-        workflow_id: workflowId,
-        branch: branch || void 0,
-        status,
-        per_page: 100,
-        page
-      });
-      runs.push(...data.workflow_runs);
-      if (data.workflow_runs.length < 100) break;
-    }
+  for (let page = 1; ; page++) {
+    const { data } = await octokit.rest.actions.listWorkflowRuns({
+      owner,
+      repo,
+      workflow_id: workflowId,
+      branch: branch || void 0,
+      per_page: 100,
+      page
+    });
+    runs.push(
+      ...data.workflow_runs.filter(
+        (run2) => run2.status != null && activeStatuses.has(run2.status)
+      )
+    );
+    if (data.workflow_runs.length < 100) break;
   }
   return runs;
 }
@@ -23741,7 +23738,6 @@ async function findJob(octokit, owner, repo, runId, jobName) {
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function run() {
   const token = getInput("token", { required: true });
-  const workflowInput = getInput("workflow").trim();
   const jobInput = getInput("job").trim();
   const branchInput = getInput("run-on-branch").trim();
   const pollIntervalSec = parseInt(getInput("poll-interval") || "10", 10);
@@ -23761,12 +23757,9 @@ async function run() {
   const branch = branchInput || currentRun.head_branch || (ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : "");
   if (!branch)
     return setFailed(`Could not determine branch (ref: '${ref}'). Please set the 'run-on-branch' input.`);
-  const targetWorkflowId = workflowInput ? await resolveWorkflowId(octokit, owner, repo, workflowInput) : currentRun.workflow_id;
-  const isSameWorkflow = targetWorkflowId === currentRun.workflow_id;
-  const currentRunStartedAt = runStartTime(currentRun);
   info(`Repository    : ${owner}/${repo}`);
   info(`Branch        : ${branch}`);
-  info(`Workflow      : ${targetWorkflowId}${isSameWorkflow ? "" : " (cross-workflow)"}`);
+  info(`Workflow      : ${currentRun.workflow_id}`);
   info(`Job filter    : ${jobInput || "(entire run)"}`);
   info(`Current run   : #${context2.runNumber} (ID: ${context2.runId})`);
   info(`Poll interval : ${pollIntervalSec}s | Timeout: ${timeoutSec}s`);
@@ -23774,10 +23767,8 @@ async function run() {
   while (true) {
     if (Date.now() > deadline)
       return setFailed(`Timeout: preceding run(s) did not complete within ${timeoutSec}s.`);
-    const activeRuns = await fetchActiveRuns(octokit, owner, repo, targetWorkflowId, branch);
-    const precedingRuns = activeRuns.filter(
-      (r) => isSameWorkflow ? r.run_number < context2.runNumber : runStartTime(r) < currentRunStartedAt
-    );
+    const activeRuns = await fetchActiveRuns(octokit, owner, repo, currentRun.workflow_id, branch);
+    const precedingRuns = activeRuns.filter((r) => r.run_number < context2.runNumber);
     if (precedingRuns.length === 0) {
       info("No preceding active runs \u2013 proceeding.");
       break;
