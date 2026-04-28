@@ -1,0 +1,38 @@
+name: 'Ensure Workflow Order'
+description: 'Ensures workflow execution order by waiting for preceding runs (or a specific job within them) to complete before proceeding.'
+
+inputs:
+  job:
+    description: >
+      Name of the job within the target workflow to wait for.
+      When set, the action waits until that specific job has finished in all preceding runs
+      rather than waiting for the entire run to complete.
+      Defaults to waiting for the whole run.
+    required: false
+    default: ''
+  run-on-branch:
+    description: >
+      Only wait for preceding runs on this branch.
+      Defaults to the branch of the current run.
+    required: false
+    default: ''
+  poll-interval:
+    description: 'How often (in seconds) to poll the GitHub API for run/job status. Default: 10'
+    required: false
+    default: '10'
+  timeout:
+    description: 'Maximum time (in seconds) to wait for preceding runs to finish before failing. Default: 600'
+    required: false
+    default: '600'
+  token:
+    description: 'GitHub token used to query the API. Defaults to the token provided by the GitHub Actions runner.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
+
+branding:
+  icon: 'clock'
+  color: 'blue'
