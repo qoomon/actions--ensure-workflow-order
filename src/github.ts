@@ -2,8 +2,10 @@ import * as github from '@actions/github'
 
 export type Octokit = ReturnType<typeof github.getOctokit>
 
-export async function fetchActiveRuns(octokit: Octokit, owner: string, repo: string, workflowId: number, branch: string) {
-  const runs = []
+type WorkflowRun = Awaited<ReturnType<Octokit['rest']['actions']['listWorkflowRuns']>>['data']['workflow_runs'][number]
+
+export async function fetchActiveRuns(octokit: Octokit, owner: string, repo: string, workflowId: number, branch: string): Promise<WorkflowRun[]> {
+  const runs: WorkflowRun[] = []
   for (const status of ['queued', 'in_progress', 'waiting'] as const) {
     for (let page = 1; ; page++) {
       const { data } = await octokit.rest.actions.listWorkflowRuns({

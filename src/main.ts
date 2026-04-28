@@ -8,12 +8,12 @@ async function run() {
   const token = core.getInput('token', { required: true })
   const jobInput = core.getInput('job').trim()
   const branchInput = core.getInput('run-on-branch').trim()
-  const pollIntervalSec = parseInt(core.getInput('poll-interval') || '10', 10)
-  const timeoutSec = parseInt(core.getInput('timeout') || '600', 10)
+  const pollIntervalSec = Number(core.getInput('poll-interval') || '10')
+  const timeoutSec = Number(core.getInput('timeout') || '600')
 
-  if (isNaN(pollIntervalSec) || pollIntervalSec <= 0)
+  if (!Number.isInteger(pollIntervalSec) || pollIntervalSec <= 0)
     return core.setFailed(`Invalid poll-interval: must be a positive integer.`)
-  if (isNaN(timeoutSec) || timeoutSec <= 0)
+  if (!Number.isInteger(timeoutSec) || timeoutSec <= 0)
     return core.setFailed(`Invalid timeout: must be a positive integer.`)
 
   const octokit = github.getOctokit(token)

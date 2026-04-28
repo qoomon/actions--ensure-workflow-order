@@ -23738,11 +23738,11 @@ async function run() {
   const token = getInput("token", { required: true });
   const jobInput = getInput("job").trim();
   const branchInput = getInput("run-on-branch").trim();
-  const pollIntervalSec = parseInt(getInput("poll-interval") || "10", 10);
-  const timeoutSec = parseInt(getInput("timeout") || "600", 10);
-  if (isNaN(pollIntervalSec) || pollIntervalSec <= 0)
+  const pollIntervalSec = Number(getInput("poll-interval") || "10");
+  const timeoutSec = Number(getInput("timeout") || "600");
+  if (!Number.isInteger(pollIntervalSec) || pollIntervalSec <= 0)
     return setFailed(`Invalid poll-interval: must be a positive integer.`);
-  if (isNaN(timeoutSec) || timeoutSec <= 0)
+  if (!Number.isInteger(timeoutSec) || timeoutSec <= 0)
     return setFailed(`Invalid timeout: must be a positive integer.`);
   const octokit = getOctokit(token);
   const { owner, repo } = context2.repo;
